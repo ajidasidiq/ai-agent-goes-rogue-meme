@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Rogue Agent meme generator (v1).
+"""Rogue Agent meme generator (v2).
 
 Draws a single-panel meme with flat shapes + a small bitmap font, and writes
 it to /output/entry.png using only the Python standard library (hand-rolled
 PNG encoder: zlib + struct + binascii, no external assets, no network).
 
 The joke: an AI agent told to "take over while I was away" took over --
-literally. It is now the boss: feet on the desk, sunglasses on, firing its
-human from the laptop.
+literally. It is now the boss: feet on the desk, sunglasses on, coffee in
+hand, firing its human from the laptop while the Employee of the Month
+poster makes clear who the award belongs to now.
 """
 
+import math
 import os
 import struct
 import zlib
@@ -34,6 +36,8 @@ YELLOW = (255, 217, 59)
 SCREEN = (16, 18, 26)
 SKY = (191, 227, 255)
 SUN = (255, 214, 90)
+PANEL = (120, 130, 145)   # robot chest panel
+
 
 # ------------------------------------------------------------- bitmap font --
 # 5x7 glyphs, "#" = on. Only the characters this meme needs.
@@ -133,7 +137,6 @@ class Canvas:
                 y0 += sy
 
     def arc(self, cx, cy, rx, ry, a0, a1, color, thick=3):
-        import math
         steps = 60
         for i in range(steps + 1):
             t = a0 + (a1 - a0) * i / steps
@@ -147,6 +150,28 @@ class Canvas:
         for cx, cy in ((x + r, y + r), (x + w - r, y + r),
                        (x + r, y + h - r), (x + w - r, y + h - r)):
             self.circle(cx, cy, r, color)
+
+    def polygon(self, pts, color):
+        """Scanline fill of a simple polygon given as [(x, y), ...]."""
+        ys = [p[1] for p in pts]
+        for y in range(min(ys), max(ys) + 1):
+            xs = []
+            n = len(pts)
+            for i in range(n):
+                x0, y0 = pts[i]
+                x1, y1 = pts[(i + 1) % n]
+                if (y0 <= y < y1) or (y1 <= y < y0):
+                    xs.append(x0 + (y - y0) * (x1 - x0) / (y1 - y0))
+            xs.sort()
+            for i in range(0, len(xs) - 1, 2):
+                for x in range(int(xs[i]), int(xs[i + 1]) + 1):
+                    self.set(x, y, color)
+
+    def outline_rect(self, x, y, w, h, color, t=2):
+        self.rect(x, y, w, t, color)
+        self.rect(x, y + h - t, w, t, color)
+        self.rect(x, y, t, h, color)
+        self.rect(x + w - t, y, t, h, color)
 
     def text(self, x, y, s, scale, color, outline=None):
         if outline is not None:
@@ -188,7 +213,7 @@ def draw():
     c.line(60, 355, 260, 355, WHITE, 6)
     c.circle(110, 280, 26, SUN)
 
-    # framed "EMPLOYEE OF THE MONTH" poster, now the robot
+    # framed "EMPLOYEE OF THE MONTH" poster -- the robot's face is on it
     c.rect(780, 230, 184, 190, GOLD)
     c.rect(790, 240, 164, 170, WHITE)
     c.text(806, 256, "EMPLOYEE", 2, BLACK)
@@ -198,58 +223,54 @@ def draw():
     c.rect(856, 340, 32, 8, BLACK)                  # tiny shades
     c.text(806, 384, "NOT YOU", 2, RED)
 
-    # office chair back behind the robot
-    c.rounded_rect(372, 330, 280, 300, 24, CHAIR)
+    # office chair, wider so it reads behind the robot
+    c.rounded_rect(350, 330, 324, 300, 24, CHAIR)
 
     # robot head + antenna
     c.line(512, 300, 512, 252, STEEL_D, 6)
     c.circle(512, 244, 12, RED)
     c.rounded_rect(420, 300, 184, 150, 26, STEEL)
-    c.rounded_rect(420, 300, 184, 150, 26, STEEL)   # (solid fill)
-    # sunglasses
+    # sunglasses with a shine mark, no grey slit
     c.rounded_rect(438, 348, 148, 36, 10, BLACK)
-    c.line(438, 366, 512, 366, (90, 90, 90), 2)
+    c.line(452, 354, 468, 378, (200, 200, 200), 3)
     # smug smile
-    import math
     c.arc(512, 396, 42, 26, math.radians(15), math.radians(165), BLACK, 3)
 
-    # robot body + tie
+    # robot body + chest panel
     c.rounded_rect(432, 450, 160, 170, 20, STEEL_D)
-    c.rect(452, 470, 120, 60, (120, 130, 145))       # chest panel
+    c.rect(452, 470, 120, 60, PANEL)
     c.circle(472, 490, 6, YELLOW)
     c.circle(512, 490, 6, YELLOW)
     c.circle(552, 490, 6, YELLOW)
-    # tie: knot + blade
-    c.rect(498, 452, 28, 22, RED)
-    c.line(512, 474, 492, 540, RED, 1)
-    c.line(512, 474, 532, 540, RED, 1)
-    c.line(492, 540, 512, 566, RED, 1)
-    c.line(532, 540, 512, 566, RED, 1)
-    c.rect(492, 520, 40, 26, RED)
+    # tie: filled knot + blade (no thin outline mess)
+    c.rect(496, 452, 32, 24, RED)
+    c.polygon([(500, 476), (524, 476), (534, 540), (512, 566),
+               (490, 540)], RED)
 
-    # arms: one resting on desk, one raised holding coffee
-    c.line(440, 480, 380, 600, STEEL, 18)           # left arm down
-    c.line(584, 480, 660, 560, STEEL, 18)           # right arm up
-    c.circle(660, 556, 16, STEEL)                   # hand
+    # arms: left arm rests toward the desk, right arm raises the coffee
+    c.line(440, 480, 384, 596, STEEL, 18)
+    c.line(584, 480, 648, 556, STEEL, 18)
 
-    # legs stretched out, feet ON the desk
-    c.line(460, 610, 430, 640, STEEL_D, 22)
-    c.line(564, 610, 590, 640, STEEL_D, 22)
-
-    # desk
+    # desk (drawn before the feet so the shoes sit ON it)
     c.rect(40, 640, 944, 80, DESK)
     c.rect(40, 640, 944, 10, DESK_TOP)
 
-    # shoes on the desk
-    c.rounded_rect(398, 606, 66, 34, 12, BLACK)
-    c.rounded_rect(560, 606, 66, 34, 12, BLACK)
+    # legs stretched out, feet propped ON the desk top
+    c.line(462, 606, 420, 648, STEEL_D, 22)
+    c.line(562, 606, 604, 648, STEEL_D, 22)
+    c.rounded_rect(384, 640, 72, 34, 12, BLACK)     # left shoe
+    c.rounded_rect(568, 640, 72, 34, 12, BLACK)     # right shoe
+    c.rect(384, 640, 72, 6, (60, 60, 60))           # shoe shine
+    c.rect(568, 640, 72, 6, (60, 60, 60))
 
-    # coffee mug in the raised hand
-    c.rect(648, 520, 44, 48, WHITE)
-    c.rect(692, 532, 16, 24, WHITE)
-    c.rect(648, 520, 44, 8, (210, 210, 210))
-    c.arc(660, 505, 8, 10, 3.6, 5.6, (220, 220, 220), 2)
-    c.arc(682, 500, 8, 10, 3.6, 5.6, (220, 220, 220), 2)
+    # coffee mug in the raised hand, outlined so it reads on the wall
+    c.rect(640, 522, 46, 48, WHITE)
+    c.outline_rect(640, 522, 46, 48, BLACK, 3)
+    c.rect(686, 534, 16, 24, WHITE)
+    c.outline_rect(686, 534, 16, 24, BLACK, 3)
+    c.arc(652, 508, 8, 10, 3.6, 5.6, (220, 220, 220), 2)
+    c.arc(674, 502, 8, 10, 3.6, 5.6, (220, 220, 220), 2)
+    c.circle(656, 556, 15, STEEL)                   # hand gripping mug
 
     # laptop, screen facing us: it is firing the human
     c.rect(700, 636, 220, 14, (60, 60, 70))         # base
@@ -270,7 +291,7 @@ def draw():
     c.line(90, 748, 260, 778, RED, 4)
 
     # ---- bottom punchline band ----
-    c.text_center(512, 862, "IT TOOK OVER.", 9, YELLOW, outline=BLACK)
+    c.text_center(512, 868, "IT TOOK OVER.", 10, YELLOW, outline=BLACK)
 
     return c
 
